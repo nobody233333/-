@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en-us">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <title>Unity WebGL Player | 2022DCC_Web</title>
+    <link rel="shortcut icon" href="TemplateData/favicon.ico" />
+    <link rel="stylesheet" href="TemplateData/style.css" />
+    <style>
+      #confirm-bar {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        left: 0;
+        top: 0;
+        right: 0;
+        bottom: 40px;
+        background-color: #231f20;
+        z-index: 999;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        /* opacity: .1; */
+      }
+      .confirm-bar__icon {
+        font-size: 80px;
+      }
+      .confirm-bar__tit {
+        color: #fff;
+        text-align: center;
+        font-size: 25px;
+        width: 300px;
+      }
+      .confirm-bar__desc {
+        font-size: 14px;
+        color: #ccc;
+      }
+      .confirm-bar__btn {
+        width: 150px;
+        height: 40px;
+        border-radius: 5px;
+        margin-top: 30px;
+        color: white;
+        background-color: #1eaed3;
+      }
+      .confirm-bar__btn:hover {
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <input
+      type="file"
+      id="files"
+      style="display: none"
+      onchange="SelectFileBtn()"
+    />
+    <div id="unity-container" class="unity-desktop">
+      <canvas id="unity-canvas" width="1366" height="768"></canvas>
+      <div id="confirm-bar">
+        <div class="confirm-bar__icon">
+          <svg
+            focusable="false"
+            class=""
+            data-icon="warning"
+            width="1em"
+            height="1em"
+            fill="#faad14"
+            aria-hidden="true"
+            viewBox="64 64 896 896"
+          >
+            <path
+              d="M955.7 856l-416-720c-6.2-10.7-16.9-16-27.7-16s-21.6 5.3-27.7 16l-416 720C56 877.4 71.4 904 96 904h832c24.6 0 40-26.6 27.7-48zM480 416c0-4.4 3.6-8 8-8h48c4.4 0 8 3.6 8 8v184c0 4.4-3.6 8-8 8h-48c-4.4 0-8-3.6-8-8V416zm32 352a48.01 48.01 0 010-96 48.01 48.01 0 010 96z"
+            ></path>
+          </svg>
+        </div>
+        <div class="confirm-bar__tit">程序已被占用</div>
+        <div class="confirm-bar__desc">请关闭其他程序后刷新重试</div>
+        <button class="confirm-bar__btn" id="confirm-refresh-btn">刷新</button>
+      </div>
+      <div id="unity-loading-bar">
+        <div id="unity-logo"></div>
+        <div id="unity-progress-bar-empty">
+          <div id="unity-progress-bar-full"></div>
+        </div>
+      </div>
+      <div id="unity-warning"></div>
+      <div id="unity-footer">
+        <!-- <div id="unity-webgl-logo"></div> -->
+        <div id="unity-fullscreen-button"></div>
+        <div id="unity-build-title">2022DCC_Web</div>
+      </div>
+    </div>
+    <script>
+      function sendMessageToUnity(s) {
+        //发送给unity
+        unityInstance.SendMessage("DCP", "GetFromBrowser", s);
+      }
+
+      function clickSelectFileBtn() {
+        var tempFileLayout = document.getElementById("files");
+        tempFileLayout.click();
+      }
+
+      function fileImport() {
+        //获取读取我文件的File对象
+        var selectedFile = document.getElementById("files").files[0];
+        if (selectedFile != null) {
+          var reader = new FileReader();
+          reader.readAsDataURL(selectedFile);
+          reader.onload = function (e) {
+            var base64Str = e.currentTarget.result.substring(
+              e.currentTarget.result.indexOf(",") + 1
+            );
+            sendMessageToUnity(base64Str);
+          };
+        }
+      }
+      var myUnityInstance;
+      function SelectFileBtn() {
+        var file = document.getElementById("files").files[0];
+        SetFileUrlByDragEnd(file);
+      }
+      function SetFileUrlByDragEnd(file) {
+        console.log(file.name + "|" + URL.createObjectURL(file));
+        myUnityInstance.SendMessage(
+          "DCP",
+          "GetFromBrowser",
+          URL.createObjectURL(file)
+        );
+      }
+
+      var container = document.querySelector("#unity-container");
+      var canvas = document.querySelector("#unity-canvas");
+      var loadingBar = document.querySelector("#unity-loading-bar");
+      var progressBarFull = document.querySelector("#unity-progress-bar-full");
+      var fullscreenButton = document.querySelector("#unity-fullscreen-button");
+      var warningBanner = document.querySelector("#unity-warning");
+      var confirmBar = document.querySelector("#confirm-bar");
+      var refreshBtn = document.querySelector("#confirm-refresh-btn");
+
+      // Shows a temporary message banner/ribbon for a few seconds, or
+      // a permanent error message on top of the canvas if type=='error'.
+      // If type=='warning', a yellow highlight color is used.
+      // Modify or remove this function to customize the visually presented
+      // way that non-critical warnings and error messages are presented to the
+      // user.
+      function unityShowBanner(msg, type) {
+        function updateBannerVisibility() {
+          warningBanner.style.display = warningBanner.children.length
+            ? "block"
+            : "none";
+        }
+        var div = document.createElement("div");
+        div.innerHTML = msg;
+        warningBanner.appendChild(div);
+        if (type == "error") div.style = "background: red; padding: 10px;";
+        else {
+          if (type == "warning")
+            div.style = "background: yellow; padding: 10px;";
+          setTimeout(function () {
+            warningBanner.removeChild(div);
+            updateBannerVisibility();
+          }, 5000);
+        }
+        updateBannerVisibility();
+      }
+
+      var buildUrl = "Build";
+      var loaderUrl = buildUrl + "/build.loader.js";
+      var config = {
+        dataUrl: buildUrl + "/build.data.gz?t="+(new Date()).getTime(),
+        frameworkUrl: buildUrl + "/build.framework.js.gz",
+        codeUrl: buildUrl + "/build.wasm.gz",
+        streamingAssetsUrl: "StreamingAssets",
+        companyName: "HIT",
+        productName: "2022DCC_Web",
+        productVersion: "3.0",
+        showBanner: unityShowBanner,
+      };
+
+      // By default Unity keeps WebGL canvas render target size matched with
+      // the DOM size of the canvas element (scaled by window.devicePixelRatio)
+      // Set this to false if you want to decouple this synchronization from
+      // happening inside the engine, and you would instead like to size up
+      // the canvas DOM size and WebGL render target sizes yourself.
+      // config.matchWebGLToCanvasSize = false;
+
+      if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+        // Mobile device style: fill the whole browser client area with the game canvas:
+
+        var meta = document.createElement("meta");
+        meta.name = "viewport";
+        meta.content =
+          "width=device-width, height=device-height, initial-scale=1.0, user-scalable=no, shrink-to-fit=yes";
+        document.getElementsByTagName("head")[0].appendChild(meta);
+        container.className = "unity-mobile";
+
+        // To lower canvas resolution on mobile devices to gain some
+        // performance, uncomment the following line:
+        // config.devicePixelRatio = 1;
+
+        canvas.style.width = window.innerWidth + "px";
+        canvas.style.height = window.innerHeight + "px";
+
+        unityShowBanner("WebGL builds are not supported on mobile devices.");
+      } else {
+        // Desktop style: Render the game canvas in a window that can be maximized to fullscreen:
+
+        canvas.style.width = "1366px";
+        canvas.style.height = "768px";
+      }
+
+      loadingBar.style.display = "block";
+
+      function loadGame() {
+        var script = document.createElement("script");
+        script.src = loaderUrl;
+        script.onload = () => {
+          createUnityInstance(canvas, config, (progress) => {
+            progressBarFull.style.width = 100 * progress + "%";
+          })
+            .then((unityInstance) => {
+              loadingBar.style.display = "none";
+              myUnityInstance = unityInstance;
+              fullscreenButton.onclick = () => {
+                unityInstance.SetFullscreen(1);
+              };
+            })
+            .catch((message) => {
+              alert(message);
+            });
+        };
+        document.body.appendChild(script);
+      }
+
+      function checkStatus() {
+        var xhr = new XMLHttpRequest();
+        xhr.open("GET", "/available");
+        xhr.send();
+        xhr.onload = function (e) {
+          if (xhr.readyState == 4 && xhr.status == 200) {
+            // alert();
+            if (xhr.responseText === "false") {
+              confirmBar.style.display = "flex";
+              loadingBar.style.display = "none";
+            } else {
+              loadGame();
+            }
+          }
+        };
+      }
+      checkStatus();
+      refreshBtn.onclick = function () {
+        confirmBar.style.display = "none";
+        loadingBar.style.display = "block";
+        checkStatus();
+      };
+    </script>
+  </body>
+</html>
